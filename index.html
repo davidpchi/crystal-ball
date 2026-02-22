@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scryfall Price Lookup</title>
+
+<style>
+body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    padding: 1rem;
+    background: #f7f7f7;
+}
+
+h1 {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.search-box {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+input {
+    flex: 1;
+    padding: 0.6rem;
+    font-size: 1rem;
+}
+
+button {
+    padding: 0.6rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.notice {
+    margin-bottom: 0.5rem;
+    color: #b00020;
+}
+
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.selector {
+    background: #fff;
+    border: 1px solid #ddd;
+    margin-bottom: 1rem;
+}
+
+.selector button {
+    display: block;
+    width: 100%;
+    padding: 0.6rem;
+    border: none;
+    border-bottom: 1px solid #eee;
+    background: #fff;
+    text-align: left;
+}
+
+.selector button:hover {
+    background: #f0f0f0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 0.9rem;
+}
+
+th, td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background: #eee;
+    position: sticky;
+    top: 0;
+}
+
+@media (max-width: 600px) {
+    table { font-size: 0.8rem; }
+}
+</style>
+</head>
+
+<body>
+<h1>MTG Card Price Lookup</h1>
+
+<div class="search-box">
+    <input id="cardInput" placeholder="Enter card name…" />
+    <button onclick="search()">Search</button>
+</div>
+
+<div id="notice" class="notice"></div>
+<div id="cardTitle" class="card-title"></div>
+<div id="results"></div>
+
+<script>
+const API = "https://api.scryfall.com";
+let searchResults = [];
+
+cardInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") search();
+});
+
+async function search() {
+    const name = cardInput.value.trim();
+    notice.textContent = "";
+    results.innerHTML = "";
+    cardTitle.textContent = "";
+    if (!name) return;
+
+    try {
+        const res = await fetch(`${API}/cards/search?q=${encodeURIComponent(name)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            notice.textContent = data.details || "No results found.";
+            return;
+        }
+
+        searchResults = data.data;
+
+        if (searchResults.length === 1) {
+            loadPrintings(0);
+        } else {
+            showSelector();
+        }
+
+    } catch {
+        notice.textContent = "Network error contacting Scryfall.";
+    }
+}
+
+function showSelector() {
+    let html = `<div class="selector">`;
+    searchResults.forEach((card, i) => {
+        html += `
+            <button onclick="loadPrintings(${i})">
+                ${card.name} — ${card.set_name} (${card.released_at})
+            </button>`;
+    });
+    html += `</div>`;
+    results.innerHTML = html;
+}
+
+async function loadPrintings(index) {
+    const card = searchResults[index];
+    cardTitle.textContent = card.name;
+    results.innerHTML = "<p>Loading printings…</p>";
+
+    let all = [];
+    let url = card.prints_search_uri;
+
+    while (url) {
+        const res = await fetch(url);
+        const data = await res.json();
+        all = all.concat(data.data);
+        url = data.has_more ? data.next_page : null;
+    }
+
+    renderTable(all);
+}
+
+function renderTable(cards) {
+    let html = `
+    <table>
+        <thead>
+            <tr>
+                <th>Set</th>
+                <th>#</th>
+                <th>Rarity</th>
+                <th>Finish</th>
+                <th>USD</th>
+                <th>USD Foil</th>
+                <th>EUR</th>
+                <th>TIX</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    for (const c of cards) {
+        html += `
+        <tr>
+            <td>${c.set_name}</td>
+            <td>${c.collector_number}</td>
+            <td>${c.rarity}</td>
+            <td>${c.finishes.join(", ")}</td>
+            <td>${c.prices.usd ?? "-"}</td>
+            <td>${c.prices.usd_foil ?? "-"}</td>
+            <td>${c.prices.eur ?? "-"}</td>
+            <td>${c.prices.tix ?? "-"}</td>
+        </tr>`;
+    }
+
+    html += "</tbody></table>";
+    results.innerHTML = html;
+}
+</script>
+</body>
+</html>
